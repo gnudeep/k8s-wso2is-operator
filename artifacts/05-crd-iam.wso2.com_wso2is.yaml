@@ -173,7 +173,7 @@ spec:
                     keystore:
                       default:
                         primary:
-                          name: wso2carbon.jks
+                          name: wso2carbon.p12
                           password: wso2carbon
                       properties:
                         primary:
@@ -255,11 +255,7 @@ spec:
                       type: object
                     userStore:
                       default:
-                        base_dn: dc=wso2,dc=org
-                        connection_name: uid=admin,ou=system
-                        connection_password: admin
-                        connection_url: ldap://localhost:${Ports.EmbeddedLDAP.LDAPServerPort}
-                        type: read_write_ldap_unique_id
+                        type: database_unique_id
                       properties:
                         base_dn:
                           type: string

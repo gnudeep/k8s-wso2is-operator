@@ -25,10 +25,11 @@ import (
 	wso2v1beta1 "github.com/wso2/k8s-wso2is-operator/api/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"log"
@@ -127,9 +128,14 @@ func (r *Wso2IsReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// Update service details in status
 	instance.Status.ServiceName = serviceFound.Name
 
-	// Check for ingress
-	ingressFound := v1beta1.Ingress{}
-	err = r.Get(ctx, types.NamespacedName{Name: ingName, Namespace: instance.Namespace}, &ingressFound)
+	// Check for ingress using unstructured client for K8s version compatibility
+	ingressFound := &unstructured.Unstructured{}
+	ingressFound.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.k8s.io",
+		Version: "v1",
+		Kind:    "Ingress",
+	})
+	err = r.Get(ctx, types.NamespacedName{Name: ingName, Namespace: instance.Namespace}, ingressFound)
 	if err != nil && errors.IsNotFound(err) {
 		logger.Info("Unable to detect Ingress in your cluster. You may configure your own")
 		return ctrl.Result{}, nil
@@ -139,8 +145,13 @@ func (r *Wso2IsReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	// Update ingress details in status
-	if len(ingressFound.Status.LoadBalancer.Ingress) > 0 {
-		instance.Status.IngressHostname = ingressFound.Status.LoadBalancer.Ingress[0].Hostname
+	lbIngress, found, _ := unstructured.NestedSlice(ingressFound.Object, "status", "loadBalancer", "ingress")
+	if found && len(lbIngress) > 0 {
+		if first, ok := lbIngress[0].(map[string]interface{}); ok {
+			if hostname, ok := first["hostname"].(string); ok {
+				instance.Status.IngressHostname = hostname
+			}
+		}
 	}
 
 	// Check if the deployment already exists, if not create a new one
