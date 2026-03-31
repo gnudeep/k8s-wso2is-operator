@@ -1,105 +1,273 @@
+## WSO2 Identity Server 7.3.0 - Kubernetes Operator
 
+A Kubernetes CRD operator for deploying and managing WSO2 Identity Server 7.3.0 on Kubernetes clusters.
 
-## WSO2 Identity Server - K8S Operator
+If you prefer Helm-based deployment, refer to: [https://github.com/wso2/kubernetes-is](https://github.com/wso2/kubernetes-is)
 
-The following CRD operator can be used to deploy WSO2 IS on your Kubernates Cluster. If you want to deploy the Identity
-Server via Helm operator please refer to the given
-link:  [https://github.com/wso2/kubernetes-is](https://github.com/wso2/kubernetes-is)
+### Key Benefits
 
-#### Key benefits
-- Auto healing
-- Ability to make a test clusters
-- Ability to provision multiple ISs on same cluster 
-- Custom Keystore addition 
-- Ability to mount custom deployment TOML files
-- Seameless updates
+- Auto healing and self-recovery
+- Single and multi-replica deployments
+- Ability to provision multiple IS instances on the same cluster
+- Custom keystore mounting (PKCS12)
+- Custom `deployment.toml` configuration support
+- Rolling update strategy with zero downtime
+- Kubernetes-native clustering support
 
+## Prerequisites
 
-## Prerequisites (Development)[](https://sdk.operatorframework.io/docs/building-operators/golang/tutorial/#prerequisites)
+- Kubernetes v1.22+ cluster
+- `kubectl` configured with cluster-admin privileges
+- A PersistentVolume with `ReadWriteMany` (production) or `ReadWriteOnce` (single-node test) access mode
+- An Ingress controller (e.g., NGINX) for external access
 
-- Access to a Kubernetes v1.11.3+ cluster (v1.16.0+ if using  `apiextensions.k8s.io/v1`  CRDs).
-- User logged with admin permission.
-  See  [how to grant yourself cluster-admin privileges or be logged in as admin](https://cloud.google.com/kubernetes-engine/docs/how-to/role-based-access-control#iam-rolebinding-bootstrap)
-- [Homebrew](https://brew.sh/) installed
-- Git command line installed and configured
-- [GoLang](https://golang.org/) installed and correctly configured, including system paths
+## Quick Start (Operator Deployment)
 
-## System Architecture
-![enter image description here](https://user-images.githubusercontent.com/3047253/105663226-b9149900-5ef7-11eb-825b-0413649a99ed.jpg)
+### Step 1: Deploy the operator
+
+Apply the all-in-one manifest to install the CRDs, RBAC, and controller:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/wso2/k8s-wso2is-operator/is-7.3.0/artifacts/operator.yaml
+```
+
+Or apply the individual manifests:
+
+```bash
+kubectl apply -f artifacts/00-namespace.yaml
+kubectl apply -f artifacts/01-cluster-role.yaml
+kubectl apply -f artifacts/02-service-account.yaml
+kubectl apply -f artifacts/03-cluster-role-binding.yaml
+kubectl apply -f artifacts/04-crd-iam.wso2.com_userstores.yaml
+kubectl apply -f artifacts/05-crd-iam.wso2.com_wso2is.yaml
+kubectl apply -f artifacts/06-controller.yaml
+```
+
+### Step 2: Verify the operator is running
+
+```bash
+kubectl get pods -n wso2-iam-system
+```
+
+You should see:
+
+```
+NAME                          READY   STATUS    RESTARTS   AGE
+controller-xxxxx-xxxxx        1/1     Running   0          30s
+```
+
+### Step 3: Create supporting resources
+
+Create a PersistentVolumeClaim for user store storage:
+
+```bash
+kubectl apply -f artifacts/07-pvc.yaml
+```
+
+Create an Ingress for external access:
+
+```bash
+kubectl apply -f artifacts/08-ingress.yaml
+```
+
+### Step 4: Deploy WSO2 Identity Server
+
+**Single-node test cluster:**
+
+```bash
+kubectl apply -f config/samples/single_node_test_cluster.yaml
+```
+
+This creates a minimal single-replica IS deployment:
+
+```yaml
+apiVersion: iam.wso2.com/v1beta1
+kind: Wso2Is
+metadata:
+  name: identity-server-test
+spec:
+  replicas: 1
+  version: "7.3.0"
+  configurations:
+    host: identityserver
+    serviceType: ClusterIP
+```
+
+**Multi-node production cluster with MySQL:**
+
+```bash
+kubectl apply -f config/samples/standard_multi_node.yaml
+```
+
+### Step 5: Verify the deployment
+
+```bash
+# Check the Wso2Is custom resource status
+kubectl get wso2is -o wide
+
+# Check the IS pod
+kubectl get pods -l deployment=identity-server-test
+
+# Check the service
+kubectl get svc wso2is-service
+```
+
+WSO2 IS takes approximately 30-60 seconds to start. The readiness probe has a 250-second initial delay. Once ready, the console is available at `https://<host>/console`.
+
+## Configuration Reference
+
+### Wso2Is Spec
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `replicas` | int | - | Number of IS pod replicas |
+| `version` | string | `7.3.0` | WSO2 IS version |
+| `configurations.host` | string | - | Hostname for the IS instance |
+| `configurations.serviceType` | string | `NodePort` | Kubernetes Service type (`NodePort`, `ClusterIP`, `LoadBalancer`) |
+| `configurations.superAdmin.username` | string | `admin` | Admin username |
+| `configurations.superAdmin.password` | string | `admin` | Admin password |
+| `configurations.userStore.type` | string | `database_unique_id` | User store type |
+| `configurations.database.identityDb` | object | H2 embedded | Identity database connection |
+| `configurations.database.sharedDb` | object | H2 embedded | Shared database connection |
+| `configurations.keystore.primary.name` | string | `wso2carbon.p12` | Primary keystore file |
+| `configurations.clustering` | object | Kubernetes scheme | Clustering configuration |
+| `tomlConfig` | string | - | Custom `deployment.toml` content (overrides all other config) |
+| `keystoreMounts` | list | - | Custom keystores to mount |
+
+### Custom TOML Configuration
+
+You can provide a full custom `deployment.toml` using the `tomlConfig` field:
+
+```yaml
+apiVersion: iam.wso2.com/v1beta1
+kind: Wso2Is
+metadata:
+  name: identity-server
+spec:
+  replicas: 1
+  configurations:
+    host: identityserver
+  tomlConfig: |
+    [server]
+    hostname = "identityserver"
+
+    [super_admin]
+    username = "admin"
+    password = "admin"
+
+    [user_store]
+    type = "database_unique_id"
+
+    [database.identity_db]
+    type = "mysql"
+    url = "jdbc:mysql://mysql:3306/IS_IDENTITY_DB"
+    username = "dbuser"
+    password = "dbpass"
+    driver = "com.mysql.cj.jdbc.Driver"
+```
+
+### Custom Keystores
+
+Mount custom keystores using the `keystoreMounts` field:
+
+```yaml
+spec:
+  keystoreMounts:
+    - name: custom-keystore.p12
+      data: <base64-encoded-keystore-data>
+```
+
+### Secondary User Store Provisioning
+
+The operator supports provisioning secondary user stores via the `Userstore` CRD:
+
+```yaml
+apiVersion: iam.wso2.com/v1beta1
+kind: Userstore
+metadata:
+  name: secondary-userstore
+spec:
+  typeId: <base64-encoded-type-id>
+  description: Secondary user store
+  name: wso2.com
+  properties:
+    - name: url
+      value: jdbc:mysql://mysql:3306/IS_USER_STORE
+    - name: userName
+      value: root
+    - name: password
+      value: password
+    - name: driverName
+      value: com.mysql.cj.jdbc.Driver
+auth:
+  host: identityserver
+  username: admin
+  password: admin
+```
 
 ## External Database Setup
 
-Please follow the instructions given in the documentation to setup the external MySQL databases
+For production deployments, configure external MySQL databases. Refer to the WSO2 documentation:
 
 - https://is.docs.wso2.com/en/7.3.0/setup/changing-to-mysql/
 - https://is.docs.wso2.com/en/7.3.0/setup/changing-datasource-bpsds/
 - https://is.docs.wso2.com/en/7.3.0/setup/changing-datasource-consent-management/
 
-### Databases to be created
+### Required Databases
 
-- WSO2_IDENTITY_DB
-- WSO2_SHARED_DB
-- WSO2_CONSENT_DB (Optional)
-- WSO2_BPS_DB (Optional)
+- `WSO2_IDENTITY_DB`
+- `WSO2_SHARED_DB`
+- `WSO2_CONSENT_DB` (Optional)
+- `WSO2_BPS_DB` (Optional)
 
-## Development Environment Setup
+## Development
 
-Please follow the following instructions to install Operator-SDK in your development environment.
+### Prerequisites
 
-    brew install operator-sdk
+- [Go](https://golang.org/) 1.13+
+- [Operator SDK](https://sdk.operatorframework.io/) (`brew install operator-sdk`)
+- Access to a Kubernetes cluster
+- Docker for building container images
 
-Clone the repository by running the following command
+### Local Development
 
-    git clone https://github.com/wso2/k8s-wso2is-operator.git
+```bash
+# Clone the repository
+git clone https://github.com/wso2/k8s-wso2is-operator.git
+cd k8s-wso2is-operator
 
-Navigate to the project directory
+# Install CRDs
+kubectl apply -f config/crd/bases/iam.wso2.com_wso2is.yaml
+kubectl apply -f config/crd/bases/iam.wso2.com_userstores.yaml
 
-    cd k8s-wso2is-operator
+# Run the operator locally
+make run
 
-Run the following command to install dependancies
+# In another terminal, apply a sample config
+kubectl apply -f config/samples/single_node_test_cluster.yaml
+```
 
-    make install
+### Building the Operator Image
 
+```bash
+# Build
+make docker-build IMG=wso2/wso2-iam-operator:7.3.0
 
-Apply the CRDs by running the following command
+# Push
+make docker-push IMG=wso2/wso2-iam-operator:7.3.0
+```
 
-    kubectl apply -f config/crd/bases/iam.wso2.com_wso2is.yaml
-    kubectl apply -f config/crd/bases/iam.wso2.com_userstores.yaml
+## System Architecture
 
-Feel free to change any configurations at **config/samples/wso2_v1_wso2is.yaml**
-Once you do the config changes apply the config by running
+![System Architecture](https://user-images.githubusercontent.com/3047253/105663226-b9149900-5ef7-11eb-825b-0413649a99ed.jpg)
 
-    kubectl apply -f config/samples/wso2_v1_wso2is.yaml
+## Sample Configurations
 
-Finally run the following command to run the operator in your cluster
+See the [config/samples](config/samples/) directory:
 
-    make run
-
-## Installation
-
-It is possible to deploy a stand alone version of the IS Operator in your cluster as well. You many follow the given steps in order to setup correctly.
-
-**Prerequisites** 
-
-1.  [Kubernetes Cluster](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
-2.  Required databases configured, and it should be accessible by all pods  
-    - Please read the documentation at: [https://is.docs.wso2.com/en/7.3.0/setup/working-with-databases/](https://is.docs.wso2.com/en/7.3.0/setup/working-with-databases/)  
-    - The following databases are required for the standard IS deployment: Identity database, Shared database
-3.  A [persistence volume](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) has be configured with ReadWriteMany permission  
-    - For AWS users, you can refer to Elastic File System (EFS) docs and learn about the configurations: [https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html)  
-    - Microsoft Azure users can use [AzureFile](https://docs.microsoft.com/en-us/azure/aks/azure-files-dynamic-pv) as the persistent storage  
-    - Google Cloud users may use [GCEPersistentDisk](https://cloud.google.com/kubernetes-engine/docs/concepts/persistent-volumes)
-4.  Also you will need to have an [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) ready to route requests from your endpoint to service, your ingress can vary from cloud provider to provider.
-
-
-Run the given command  within your cluster
-
-    kubectl apply -f https://raw.githubusercontent.com/wso2/k8s-wso2is-operator/main/artifacts/operator.yaml
-
-For step by step instructions on setting up, please refer to the two articles that we've published
-- [Part 01: Deploying WSO2 Identity Server 7.3.0 on Kubernetes with all new K8s Operator](https://tsmpeiris.medium.com/part-01-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-e6d9e76d7e7)
-- [Part 02: Deploying WSO2 Identity Server 7.3.0 on Kubernetes with all new K8s Operator](https://medium.com/@tsmpeiris/part-02-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-5d751c1f4ba0)
-    
-    
-Finally you may apply your own configurations by refering to the formats given in samples
-https://github.com/wso2/k8s-wso2is-operator/tree/main/config/samples
+| File | Description |
+|------|-------------|
+| `single_node_test_cluster.yaml` | Minimal single-replica test deployment |
+| `standard_multi_node.yaml` | Multi-replica production deployment with MySQL |
+| `standard_multi_factor.yaml` | Multi-replica with TOTP authentication enabled |
+| `userstore_config.yaml` | Secondary user store provisioning |

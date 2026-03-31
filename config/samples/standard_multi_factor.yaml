@@ -26,7 +26,7 @@ spec:
         password: '12345678'
     keystore:
       primary:
-        name: wso2carbon.jks
+        name: wso2carbon.p12
         password: wso2carbon
     clustering:
       properties:
