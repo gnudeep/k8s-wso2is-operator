@@ -17,5 +17,5 @@ spec:
     spec:
       containers:
         - name: controller
-          image: sureshmichael/wso2-iam-operator:latest
+          image: wso2/wso2-iam-operator:7.3.0
       serviceAccountName: controller

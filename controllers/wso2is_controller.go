@@ -479,7 +479,7 @@ func (r *Wso2IsReconciler) deploymentForWso2Is(m wso2v1beta1.Wso2Is) *appsv1.Dep
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      pvcName,
-								MountPath: "/home/wso2carbon/wso2is-5.11.0/repository/deployment/server/userstores",
+								MountPath: "/home/wso2carbon/wso2is-7.3.0/repository/deployment/server/userstores",
 							},
 							{
 								Name:        configMapName,
@@ -488,7 +488,7 @@ func (r *Wso2IsReconciler) deploymentForWso2Is(m wso2v1beta1.Wso2Is) *appsv1.Dep
 							},
 							{
 								Name:      secretName,
-								MountPath: "/home/wso2carbon/wso2is-5.11.0/repository/resources/security/controller-keystores",
+								MountPath: "/home/wso2carbon/wso2is-7.3.0/repository/resources/security/controller-keystores",
 								ReadOnly:  true,
 							},
 						},

@@ -31,9 +31,9 @@ link:  [https://github.com/wso2/kubernetes-is](https://github.com/wso2/kubernete
 
 Please follow the instructions given in the documentation to setup the external MySQL databases
 
-- https://is.docs.wso2.com/en/5.11.0/setup/changing-to-mysql/
-- https://is.docs.wso2.com/en/5.11.0/setup/changing-datasource-bpsds/
-- https://is.docs.wso2.com/en/5.11.0/setup/changing-datasource-consent-management/
+- https://is.docs.wso2.com/en/7.3.0/setup/changing-to-mysql/
+- https://is.docs.wso2.com/en/7.3.0/setup/changing-datasource-bpsds/
+- https://is.docs.wso2.com/en/7.3.0/setup/changing-datasource-consent-management/
 
 ### Databases to be created
 
@@ -83,7 +83,7 @@ It is possible to deploy a stand alone version of the IS Operator in your cluste
 
 1.  [Kubernetes Cluster](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
 2.  Required databases configured, and it should be accessible by all pods  
-    - Please read the documentation at: [https://is.docs.wso2.com/en/5.11.0/setup/working-with-databases/](https://is.docs.wso2.com/en/5.11.0/setup/working-with-databases/)  
+    - Please read the documentation at: [https://is.docs.wso2.com/en/7.3.0/setup/working-with-databases/](https://is.docs.wso2.com/en/7.3.0/setup/working-with-databases/)  
     - The following databases are required for the standard IS deployment: Identity database, Shared database
 3.  A [persistence volume](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) has be configured with ReadWriteMany permission  
     - For AWS users, you can refer to Elastic File System (EFS) docs and learn about the configurations: [https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html)  
@@ -97,8 +97,8 @@ Run the given command  within your cluster
     kubectl apply -f https://raw.githubusercontent.com/wso2/k8s-wso2is-operator/main/artifacts/operator.yaml
 
 For step by step instructions on setting up, please refer to the two articles that we've published
-- [Part 01: Deploying WSO2 Identity Server 5.11.0 on Kubernetes with all new K8s Operator](https://tsmpeiris.medium.com/part-01-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-e6d9e76d7e7)
-- [Part 02: Deploying WSO2 Identity Server 5.11.0 on Kubernetes with all new K8s Operator](https://medium.com/@tsmpeiris/part-02-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-5d751c1f4ba0)
+- [Part 01: Deploying WSO2 Identity Server 7.3.0 on Kubernetes with all new K8s Operator](https://tsmpeiris.medium.com/part-01-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-e6d9e76d7e7)
+- [Part 02: Deploying WSO2 Identity Server 7.3.0 on Kubernetes with all new K8s Operator](https://medium.com/@tsmpeiris/part-02-deploying-wso2-identity-server-5-11-0-on-kubernetes-with-all-new-k8s-operator-5d751c1f4ba0)
     
     
 Finally you may apply your own configurations by refering to the formats given in samples

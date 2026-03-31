@@ -295,7 +295,7 @@ spec:
                 tomlConfig:
                   type: string
                 version:
-                  default: 5.11.0
+                  default: 7.3.0
                   type: string
               required:
                 - configurations
