@@ -112,7 +112,36 @@ kubectl get pods -l deployment=identity-server-test
 kubectl get svc wso2is-service
 ```
 
-WSO2 IS takes approximately 30-60 seconds to start. The readiness probe has a 250-second initial delay. Once ready, the console is available at `https://<host>/console`.
+WSO2 IS takes approximately 30-60 seconds to start. The readiness probe has a 250-second initial delay.
+
+### Step 6: Access the deployment
+
+**Add a host entry** so your browser can resolve the configured hostname. WSO2 IS validates the hostname in incoming requests against its `server.hostname` configuration, so accessing via `localhost` may cause redirect issues in the console.
+
+Add to `/etc/hosts` (Linux/macOS) or `C:\Windows\System32\drivers\etc\hosts` (Windows):
+
+```
+127.0.0.1   identityserver
+```
+
+> Replace `identityserver` with the value of `configurations.host` in your Wso2Is CR if you changed it.
+
+**Start port-forwarding:**
+
+```bash
+kubectl port-forward svc/wso2is-service 9443:9443
+```
+
+**Open in your browser:**
+
+| URL | Description |
+|-----|-------------|
+| `https://identityserver:9443/console` | IS 7.x Console (new UI) |
+| `https://identityserver:9443/carbon` | Carbon Management Console (legacy) |
+
+Default login credentials: `admin` / `admin`
+
+> Your browser will show a certificate warning (self-signed cert) — accept it to proceed.
 
 ## Configuration Reference
 
