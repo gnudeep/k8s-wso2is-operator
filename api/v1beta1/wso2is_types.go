@@ -415,22 +415,54 @@ type AdminService struct {
 	Wsdl Wsdl `toml:"wsdl,omitempty" json:"wsdl,omitempty"`
 }
 
+// DeploymentConditionType represents the type of a deployment condition
+type DeploymentConditionType string
+
+const (
+	// ConditionConfigReady indicates ConfigMap and Secret are created
+	ConditionConfigReady DeploymentConditionType = "ConfigReady"
+	// ConditionServiceReady indicates the Service is available
+	ConditionServiceReady DeploymentConditionType = "ServiceReady"
+	// ConditionDeploymentReady indicates the Deployment has desired replicas
+	ConditionDeploymentReady DeploymentConditionType = "DeploymentReady"
+	// ConditionPodsReady indicates all pods are running and ready
+	ConditionPodsReady DeploymentConditionType = "PodsReady"
+	// ConditionAvailable indicates the overall deployment is healthy
+	ConditionAvailable DeploymentConditionType = "Available"
+)
+
+// DeploymentCondition describes the state of a deployment at a certain point
+type DeploymentCondition struct {
+	// Type of deployment condition
+	Type DeploymentConditionType `json:"type"`
+	// Status of the condition (True, False, Unknown)
+	Status string `json:"status"`
+	// Last time the condition transitioned
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+	// Reason for the condition
+	Reason string `json:"reason,omitempty"`
+	// Human-readable message
+	Message string `json:"message,omitempty"`
+}
+
 // Wso2IsStatus defines the observed state of Wso2Is
 type Wso2IsStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Nodes           []string `json:"nodes" toml:"nodes"`
-	ServiceName     string   `json:"serviceName"`
-	IngressHostname string   `json:"ingressHostname"`
-	Replicas        string   `json:"replicas"`
+	Nodes           []string              `json:"nodes" toml:"nodes"`
+	ServiceName     string                `json:"serviceName"`
+	IngressHostname string                `json:"ingressHostname"`
+	Replicas        string                `json:"replicas"`
+	ReadyReplicas   int32                 `json:"readyReplicas,omitempty"`
+	Conditions      []DeploymentCondition `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +k8s:openapi-gen=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.readyReplicas`
 // +kubebuilder:printcolumn:name="Service Name",type="string",JSONPath=`.status.serviceName`
-// +kubebuilder:printcolumn:name="Ingress Hostname",type="string",JSONPath=`.status.ingressHostname`
 // +kubebuilder:printcolumn:name="Desired Replicas",type="string",JSONPath=`.spec.replicas`
 // +kubebuilder:printcolumn:name="Current Replicas",type="string",JSONPath=`.status.replicas`
 // +kubebuilder:printcolumn:name="Host Name",type="string",JSONPath=`.spec.configurations.host`

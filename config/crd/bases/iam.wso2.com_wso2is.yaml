@@ -17,21 +17,25 @@ spec:
   scope: Namespaced
   versions:
     - additionalPrinterColumns:
-        - jsonPath: .status.serviceName
-          name: Service Name
-          type: string
-        - jsonPath: .status.ingressHostname
-          name: Ingress Hostname
-          type: string
+        - jsonPath: .status.readyReplicas
+          name: Ready
+          type: integer
         - jsonPath: .spec.replicas
-          name: Desired Replicas
-          type: string
-        - jsonPath: .status.replicas
-          name: Current Replicas
+          name: Desired
+          type: integer
+        - jsonPath: .status.serviceName
+          name: Service
           type: string
         - jsonPath: .spec.configurations.host
-          name: Host Name
+          name: Host
           type: string
+        - jsonPath: '.status.conditions[?(@.type=="Available")].status'
+          name: Available
+          type: string
+        - jsonPath: '.status.conditions[?(@.type=="Available")].message'
+          name: Status
+          type: string
+          priority: 1
       name: v1beta1
       schema:
         openAPIV3Schema:
@@ -569,16 +573,34 @@ spec:
                 ingressHostname:
                   type: string
                 nodes:
-                  description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
-                  of cluster Important: Run "make" to regenerate code after modifying
-                  this file'
                   items:
                     type: string
                   type: array
                 replicas:
                   type: string
+                readyReplicas:
+                  type: integer
+                  format: int32
                 serviceName:
                   type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                    required:
+                      - type
+                      - status
               required:
                 - ingressHostname
                 - nodes

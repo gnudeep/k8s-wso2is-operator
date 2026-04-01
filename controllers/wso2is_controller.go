@@ -33,9 +33,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"log"
-	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"time"
 )
 
 // Wso2IsReconciler reconciles a Wso2Is object
@@ -195,13 +195,16 @@ func (r *Wso2IsReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	podNames := getPodNames(podList.Items)
 
 	// Update status.Nodes if needed
-	if !reflect.DeepEqual(podNames, instance.Status.Nodes) {
-		instance.Status.Nodes = podNames
-		err := r.Status().Update(ctx, &instance)
-		if err != nil {
-			logger.Error(err, "Failed to update WSO2IS status")
-			return ctrl.Result{}, err
-		}
+	instance.Status.Nodes = podNames
+
+	// Validate deployment and set conditions
+	r.validateDeployment(ctx, &instance, logger)
+
+	// Always update status
+	err = r.Status().Update(ctx, &instance)
+	if err != nil {
+		logger.Error(err, "Failed to update WSO2IS status")
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
@@ -569,4 +572,133 @@ func (r *Wso2IsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&wso2v1beta1.Wso2Is{}).
 		Complete(r)
+}
+
+// setCondition sets or updates a condition on the Wso2Is status
+func setCondition(status *wso2v1beta1.Wso2IsStatus, condType wso2v1beta1.DeploymentConditionType, condStatus string, reason string, message string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, c := range status.Conditions {
+		if c.Type == condType {
+			if c.Status != condStatus {
+				status.Conditions[i].LastTransitionTime = now
+			}
+			status.Conditions[i].Status = condStatus
+			status.Conditions[i].Reason = reason
+			status.Conditions[i].Message = message
+			return
+		}
+	}
+	status.Conditions = append(status.Conditions, wso2v1beta1.DeploymentCondition{
+		Type:               condType,
+		Status:             condStatus,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// validateDeployment checks all components and sets status conditions
+func (r *Wso2IsReconciler) validateDeployment(ctx context.Context, instance *wso2v1beta1.Wso2Is, logger logr.Logger) {
+	allReady := true
+
+	// Validate spec
+	if instance.Spec.Size < 1 {
+		setCondition(&instance.Status, wso2v1beta1.ConditionAvailable, "False", "InvalidSpec", "replicas must be >= 1")
+		return
+	}
+	if instance.Spec.Configurations.Host == "" {
+		setCondition(&instance.Status, wso2v1beta1.ConditionAvailable, "False", "InvalidSpec", "configurations.host is required")
+		return
+	}
+
+	// Check ConfigMap
+	confMap := &corev1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: instance.Namespace}, confMap)
+	if err != nil {
+		setCondition(&instance.Status, wso2v1beta1.ConditionConfigReady, "False", "ConfigMapNotFound", "ConfigMap "+configMapName+" not found")
+		allReady = false
+	} else {
+		setCondition(&instance.Status, wso2v1beta1.ConditionConfigReady, "True", "ConfigMapReady", "ConfigMap "+configMapName+" is available")
+	}
+
+	// Check Service
+	svc := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: svcName, Namespace: instance.Namespace}, svc)
+	if err != nil {
+		setCondition(&instance.Status, wso2v1beta1.ConditionServiceReady, "False", "ServiceNotFound", "Service "+svcName+" not found")
+		allReady = false
+	} else {
+		setCondition(&instance.Status, wso2v1beta1.ConditionServiceReady, "True", "ServiceReady", "Service "+svcName+" is available with ClusterIP "+svc.Spec.ClusterIP)
+	}
+
+	// Check Deployment
+	dep := &appsv1.Deployment{}
+	err = r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, dep)
+	if err != nil {
+		setCondition(&instance.Status, wso2v1beta1.ConditionDeploymentReady, "False", "DeploymentNotFound", "Deployment "+instance.Name+" not found")
+		setCondition(&instance.Status, wso2v1beta1.ConditionPodsReady, "Unknown", "DeploymentNotFound", "Cannot check pods without deployment")
+		allReady = false
+	} else {
+		// Check deployment readiness
+		if dep.Status.ReadyReplicas == *dep.Spec.Replicas {
+			setCondition(&instance.Status, wso2v1beta1.ConditionDeploymentReady, "True", "AllReplicasReady",
+				fmt.Sprintf("%d/%d replicas are ready", dep.Status.ReadyReplicas, *dep.Spec.Replicas))
+		} else {
+			setCondition(&instance.Status, wso2v1beta1.ConditionDeploymentReady, "False", "ReplicasNotReady",
+				fmt.Sprintf("%d/%d replicas are ready", dep.Status.ReadyReplicas, *dep.Spec.Replicas))
+			allReady = false
+		}
+		instance.Status.ReadyReplicas = dep.Status.ReadyReplicas
+
+		// Check individual pod health
+		podList := &corev1.PodList{}
+		listOpts := []client.ListOption{
+			client.InNamespace(instance.Namespace),
+			client.MatchingLabels(labelsForWso2IS(instance.Name, instance.Spec.Version)),
+		}
+		if err = r.List(ctx, podList, listOpts...); err == nil {
+			readyPods := 0
+			totalPods := len(podList.Items)
+			var notReadyReasons []string
+			for _, pod := range podList.Items {
+				podReady := false
+				for _, cond := range pod.Status.Conditions {
+					if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+						podReady = true
+						break
+					}
+				}
+				if podReady {
+					readyPods++
+				} else {
+					reason := string(pod.Status.Phase)
+					if len(pod.Status.ContainerStatuses) > 0 {
+						cs := pod.Status.ContainerStatuses[0]
+						if cs.State.Waiting != nil {
+							reason = cs.State.Waiting.Reason
+						}
+					}
+					notReadyReasons = append(notReadyReasons, fmt.Sprintf("%s: %s", pod.Name, reason))
+				}
+			}
+			if readyPods == totalPods && totalPods > 0 {
+				setCondition(&instance.Status, wso2v1beta1.ConditionPodsReady, "True", "AllPodsReady",
+					fmt.Sprintf("%d/%d pods are ready", readyPods, totalPods))
+			} else {
+				msg := fmt.Sprintf("%d/%d pods are ready", readyPods, totalPods)
+				if len(notReadyReasons) > 0 {
+					msg = msg + "; " + notReadyReasons[0]
+				}
+				setCondition(&instance.Status, wso2v1beta1.ConditionPodsReady, "False", "PodsNotReady", msg)
+				allReady = false
+			}
+		}
+	}
+
+	// Set overall Available condition
+	if allReady {
+		setCondition(&instance.Status, wso2v1beta1.ConditionAvailable, "True", "DeploymentHealthy", "All components are ready")
+	} else {
+		setCondition(&instance.Status, wso2v1beta1.ConditionAvailable, "False", "ComponentsNotReady", "One or more components are not ready")
+	}
 }
