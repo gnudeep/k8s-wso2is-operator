@@ -541,6 +541,9 @@ func (r *Wso2IsReconciler) deploymentForWso2Is(m wso2v1beta1.Wso2Is) *appsv1.Dep
 						},
 					}},
 					ServiceAccountName: svcAccountName,
+					SecurityContext: &corev1.PodSecurityContext{
+						FSGroup: &runasuser,
+					},
 					HostAliases: []corev1.HostAlias{{
 						IP:        "127.0.0.1",
 						Hostnames: []string{m.Spec.Configurations.Host},

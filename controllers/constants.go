@@ -1,6 +1,6 @@
 package controllers
 
-const containerImage string = "wso2/wso2is:7.3.0-beta"
+const containerImage string = "wso2/wso2is:7.3.0-pg"
 
 const containerPortHttps int32 = 9443
 
