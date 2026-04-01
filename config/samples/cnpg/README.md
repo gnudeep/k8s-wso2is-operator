@@ -5,24 +5,32 @@ This guide walks through deploying WSO2 Identity Server 7.3.0 with a PostgreSQL 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Kubernetes Cluster                  │
-│                                                       │
-│  ┌─────────────────┐        ┌──────────────────────┐ │
-│  │  WSO2 IS Operator│        │  CloudNativePG       │ │
-│  │  (wso2-iam-      │        │  Operator            │ │
-│  │   system ns)     │        │  (cnpg-system ns)    │ │
-│  └────────┬─────────┘        └──────────┬───────────┘ │
-│           │ manages                      │ manages     │
-│           ▼                              ▼             │
-│  ┌─────────────────┐        ┌──────────────────────┐ │
-│  │  WSO2 Identity   │──────▶│  PostgreSQL Cluster   │ │
-│  │  Server Pod      │ JDBC   │  (wso2is-pg-rw:5432) │ │
-│  │  (port 9443)     │        │                      │ │
-│  └─────────────────┘        │  ├─ wso2_identity_db  │ │
-│                              │  └─ wso2_shared_db   │ │
-│                              └──────────────────────┘ │
-└──────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                        Kubernetes Cluster                         │
+│                                                                   │
+│  ┌─────────────────┐   ┌──────────────────┐   ┌──────────────┐  │
+│  │  WSO2 IS Operator│   │  CloudNativePG   │   │  NFS CSI     │  │
+│  │  (wso2-iam-      │   │  Operator        │   │  Driver      │  │
+│  │   system ns)     │   │  (cnpg-system)   │   │  (kube-system│  │
+│  └────────┬─────────┘   └────────┬─────────┘   └──────┬───────┘  │
+│           │ manages              │ manages             │ provides │
+│           ▼                      ▼                     ▼          │
+│  ┌─────────────────┐   ┌──────────────────┐   ┌──────────────┐  │
+│  │  IS Pod 1        │   │  PostgreSQL      │   │  NFS Server  │  │
+│  │  (node-0)        │──▶│  Cluster         │   │  Pod         │  │
+│  ├─────────────────┤   │  (wso2is-pg-rw)  │   └──────┬───────┘  │
+│  │  IS Pod 2        │──▶│                  │          │          │
+│  │  (node-1)        │   │  ├ wso2_identity │   ┌──────┴───────┐  │
+│  └────────┬─────────┘   │  └ wso2_shared   │   │  NFS PVC     │  │
+│           │              └──────────────────┘   │  (RWX)       │  │
+│           │                                     └──────┬───────┘  │
+│           └── /userstores (shared) ────────────────────┘          │
+│                                                                   │
+│           ┌─────────────┐                                         │
+│           │ wso2is-     │◀── load balances across IS pods         │
+│           │ service     │                                         │
+│           └─────────────┘                                         │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
@@ -140,13 +148,145 @@ kubectl exec wso2is-pg-1 -c postgres -- psql -U postgres -d wso2_identity_db \
 
 Expected: ~60 tables in shared_db, ~164 tables in identity_db.
 
-## Step 5: Create PVC and Ingress
+## Step 5: Set Up Shared Storage and Ingress
+
+### Shared storage for secondary userstores
+
+WSO2 IS stores secondary userstore configurations as XML files in the `/repository/deployment/server/userstores` directory. In a multi-replica deployment, all pods need read-write access to this directory so that userstores created on one node are visible to all others.
+
+> **Note:** The primary user store (`database_unique_id`) stores all user data in PostgreSQL and does **not** require shared file storage. The shared PVC is only needed for secondary userstore XML configurations. See the [WSO2 docs on secondary user stores](https://github.com/wso2/docs-is/blob/master/en/identity-server/6.0.0/docs/deploy/configure-secondary-user-stores.md) for details.
+
+**For production (cloud):** Use a `ReadWriteMany` StorageClass provided by your cloud (AWS EFS, Azure Files, GCP Filestore):
 
 ```bash
-# PVC for user store storage (use ReadWriteOnce for single-node, ReadWriteMany for multi-node)
 kubectl apply -f ../../artifacts/07-pvc.yaml
+```
 
-# Ingress for external access
+**For k3s / local development:** The default `local-path` StorageClass only supports `ReadWriteOnce`. Use the in-cluster NFS approach below.
+
+#### Setting up NFS shared storage on k3s
+
+Install the **NFS CSI Driver** (handles NFS mounting via CSI — no NFS client utilities needed on nodes):
+
+```bash
+helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+  --namespace kube-system \
+  --set kubeletDir=/var/lib/kubelet
+```
+
+Deploy an **in-cluster NFS server** pod:
+
+```bash
+kubectl apply -f - <<'EOF'
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-server-data
+  namespace: kube-system
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      containers:
+        - name: nfs-server
+          image: itsthenetwork/nfs-server-alpine:12
+          ports:
+            - containerPort: 2049
+          securityContext:
+            privileged: true
+          env:
+            - name: SHARED_DIRECTORY
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nfs-server-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  namespace: kube-system
+spec:
+  selector:
+    app: nfs-server
+  ports:
+    - port: 2049
+      targetPort: 2049
+EOF
+```
+
+Create the **NFS StorageClass** and **ReadWriteMany PVC**:
+
+```bash
+kubectl apply -f - <<'EOF'
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-csi
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: nfs-server.kube-system.svc.cluster.local
+  share: /
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+mountOptions:
+  - nfsvers=4.1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-store-pv-claim
+spec:
+  storageClassName: nfs-csi
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+EOF
+```
+
+Verify the PVC is bound with `RWX` access:
+
+```bash
+kubectl get pvc user-store-pv-claim
+```
+
+```
+NAME                  STATUS   VOLUME       CAPACITY   ACCESS MODES   STORAGECLASS
+user-store-pv-claim   Bound    pvc-xxxxx    1Gi        RWX            nfs-csi
+```
+
+### Ingress
+
+Create an Ingress for external access:
+
+```bash
 kubectl apply -f ../../artifacts/08-ingress.yaml
 ```
 
@@ -226,6 +366,105 @@ kubectl get cluster wso2is-pg
 kubectl get pods
 ```
 
+## Multi-Node Deployment
+
+The `wso2is-with-postgres.yaml` sample deploys 2 IS replicas with Kubernetes clustering enabled. This section explains the key considerations.
+
+### How clustering works
+
+When `replicas > 1`, the IS nodes must discover each other for session replication. The `tomlConfig` includes:
+
+```toml
+[clustering]
+membership_scheme = "kubernetes"
+domain = "wso2.is.domain"
+[clustering.properties]
+membershipSchemeClassName = "org.wso2.carbon.membership.scheme.kubernetes.KubernetesMembershipScheme"
+KUBERNETES_NAMESPACE = "default"
+KUBERNETES_SERVICES = "wso2is-service"
+KUBERNETES_MASTER_SKIP_SSL_VERIFICATION = true
+```
+
+The IS pods use the `wso2is-service` endpoints to discover cluster members. The `wso2is-service` Service load-balances traffic across all ready pods.
+
+### Shared storage requirements
+
+| Component | Storage | Shared across pods? |
+|-----------|---------|:---:|
+| Primary user store (`database_unique_id`) | PostgreSQL tables | Yes (via DB) |
+| Secondary userstores (added via console/API) | XML files in `/userstores` dir | Requires `ReadWriteMany` PVC |
+| IS runtime files (e.g. `AGENT.xml`) | `/userstores` dir | Requires `ReadWriteMany` PVC |
+| Configuration (`deployment.toml`) | ConfigMap | Yes (mounted in all pods) |
+| Keystores | Secret | Yes (mounted in all pods) |
+
+The operator sets `fsGroup: 802` on the pod security context so that NFS and CSI-backed volumes are writable by the `wso2carbon` user (uid 802).
+
+### Shared storage options
+
+| Option | Access Mode | Persists | k3s Local | Cloud |
+|--------|:-----------:|:--------:|:---------:|:-----:|
+| NFS CSI (in-cluster NFS server) | ReadWriteMany | Yes | Recommended | - |
+| AWS EFS / Azure Files / GCP Filestore | ReadWriteMany | Yes | - | Recommended |
+| Longhorn | ReadWriteMany | Yes | Heavy but works | - |
+| `emptyDir` | Per-pod only | No | Quick testing only | - |
+
+For k3s local, the [NFS CSI setup in Step 5](#setting-up-nfs-shared-storage-on-k3s) provides ReadWriteMany without requiring NFS client utilities on the k3d/k3s nodes.
+
+### Validating shared storage
+
+Write a file from one pod and read it from another:
+
+```bash
+POD1=$(kubectl get pods -l deployment=identity-server -o jsonpath='{.items[0].metadata.name}')
+POD2=$(kubectl get pods -l deployment=identity-server -o jsonpath='{.items[1].metadata.name}')
+
+# Write from pod 1
+kubectl exec $POD1 -- sh -c 'echo "test" > /home/wso2carbon/wso2is-7.3.0/repository/deployment/server/userstores/test.txt'
+
+# Read from pod 2
+kubectl exec $POD2 -- cat /home/wso2carbon/wso2is-7.3.0/repository/deployment/server/userstores/test.txt
+
+# Clean up
+kubectl exec $POD1 -- rm /home/wso2carbon/wso2is-7.3.0/repository/deployment/server/userstores/test.txt
+```
+
+### Scaling replicas
+
+Change the `replicas` field in the Wso2Is CR:
+
+```bash
+kubectl patch wso2is identity-server --type merge -p '{"spec":{"replicas":3}}'
+```
+
+The operator scales the deployment and the clustering config ensures all new nodes join automatically via the `wso2is-service` endpoint discovery.
+
+### Monitoring deployment health
+
+The operator reports real-time status conditions:
+
+```bash
+kubectl get wso2is -o wide
+```
+
+```
+NAME              READY   DESIRED   SERVICE          HOST             AVAILABLE   STATUS
+identity-server   2       2         wso2is-service   identityserver   True        All components are ready
+```
+
+Detailed conditions:
+
+```bash
+kubectl get wso2is identity-server -o jsonpath='{range .status.conditions[*]}{.type}{"\t"}{.status}{"\t"}{.message}{"\n"}{end}'
+```
+
+```
+ConfigReady      True    ConfigMap identity-server-conf is available
+ServiceReady     True    Service wso2is-service is available with ClusterIP 10.43.x.x
+DeploymentReady  True    2/2 replicas are ready
+PodsReady        True    2/2 pods are ready
+Available        True    All components are ready
+```
+
 ## Production Considerations
 
 ### PostgreSQL High Availability
@@ -239,13 +478,29 @@ spec:
 
 ### Persistent Storage
 
-Configure a production-grade StorageClass:
+Configure a production-grade StorageClass for PostgreSQL:
 
 ```yaml
 spec:
   storage:
     size: 20Gi
     storageClass: gp3  # AWS EBS
+```
+
+For the IS userstore PVC, use a cloud-native ReadWriteMany StorageClass:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-store-pv-claim
+spec:
+  storageClassName: efs-sc    # AWS EFS
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
 ```
 
 ### Database Credentials
@@ -261,20 +516,6 @@ type: kubernetes.io/basic-auth
 stringData:
   username: wso2carbon
   password: <generate-a-strong-password>
-```
-
-### WSO2 IS Replicas
-
-Scale IS for high availability:
-
-```yaml
-spec:
-  replicas: 2
-  configurations:
-    clustering:
-      membership_scheme: kubernetes
-      properties:
-        KUBERNETES_SERVICES: wso2is-service
 ```
 
 ## File Reference
