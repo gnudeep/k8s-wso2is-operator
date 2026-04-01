@@ -1,3 +1,11 @@
+# WSO2 Identity Server with PostgreSQL JDBC Driver
+#
+# Uses wso2/wso2is:7.2.0 as the base image because the 7.3.0 GA image
+# is not yet published on Docker Hub. When it becomes available, update to:
+#
+#   FROM wso2/wso2is:7.3.0
+#   ... /home/wso2carbon/wso2is-7.3.0/repository/components/lib/...
+#
 FROM wso2/wso2is:7.2.0
 
 USER root

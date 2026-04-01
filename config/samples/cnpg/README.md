@@ -73,13 +73,13 @@ RUN wget -q -O /home/wso2carbon/wso2is-7.2.0/repository/components/lib/postgresq
 USER wso2carbon
 ```
 
+> **Why `wso2is:7.2.0`?** The WSO2 IS 7.3.0 GA image is not yet published on Docker Hub (only a beta tag exists on GitHub). The Dockerfile uses `wso2/wso2is:7.2.0` (latest stable) as the base. When the 7.3.0 image is released, update the `FROM` line and the path from `wso2is-7.2.0` to `wso2is-7.3.0`.
+
 If using k3d, import the image:
 
 ```bash
 k3d image import wso2/wso2is:7.3.0-pg -c <cluster-name>
 ```
-
-> **Note:** When the official WSO2 IS 7.3.0 image is released, update the base image and paths accordingly.
 
 ## Step 3: Deploy PostgreSQL Cluster
 
