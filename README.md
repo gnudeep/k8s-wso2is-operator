@@ -258,7 +258,69 @@ make docker-push IMG=wso2/wso2-iam-operator:7.3.0
 
 ## System Architecture
 
-![System Architecture](https://user-images.githubusercontent.com/3047253/105663226-b9149900-5ef7-11eb-825b-0413649a99ed.jpg)
+```
+                                ┌─────────┐
+                                │  User   │
+                                └────┬────┘
+                                     │ HTTPS
+                              ┌──────▼───────┐
+                              │   Ingress    │
+                              │  Controller  │
+                              └──────┬───────┘
+                                     │
+                              ┌──────▼───────┐
+                              │  wso2is-     │
+                              │  service     │──── ClusterIP / NodePort
+                              └──┬───────┬───┘
+                   ┌─────────────┘       └─────────────┐
+                   │ :9443                        :9443 │
+          ┌────────▼─────────┐              ┌──────────▼───────┐
+          │  IS Pod 1        │   Kubernetes │  IS Pod 2        │
+          │  ┌─────────────┐ │   Clustering │  ┌─────────────┐ │
+          │  │ wso2is      │ │◄────────────►│  │ wso2is      │ │
+          │  │ container   │ │              │  │ container   │ │
+          │  └─────────────┘ │              │  └─────────────┘ │
+          │  Volumes:        │              │  Volumes:        │
+          │  ├ ConfigMap     │              │  ├ ConfigMap     │
+          │  ├ Secret        │              │  ├ Secret        │
+          │  └ NFS PVC (RWX) │              │  └ NFS PVC (RWX) │
+          └────────┬─────────┘              └────────┬─────────┘
+                   │ Node 1                          │ Node 2
+                   │                                 │
+                   │         ┌───────────────┐       │
+                   │         │  NFS Shared   │       │
+                   └────────►│  Volume (RWX) │◄──────┘
+                             │  /userstores  │
+                             └───────────────┘
+                                     │
+                   ┌─────────────────┴──────────────────┐
+                   │                                    │
+          ┌────────▼─────────┐              ┌───────────▼──────┐
+          │  PostgreSQL      │              │  NFS Server      │
+          │  (CloudNativePG) │              │  Pod             │
+          │                  │              │  (kube-system)   │
+          │  ├ wso2_identity │              └──────────────────┘
+          │  └ wso2_shared   │
+          └──────────────────┘
+
+
+  IAM Control Plane
+  ─────────────────
+  ┌──────────────┐        ┌──────────────────────────────────────┐
+  │  Wso2Is CRD  │───────►│  WSO2 IS Operator                   │
+  │              │        │  (wso2-iam-system namespace)         │
+  │  apiVersion: │        │                                      │
+  │  iam.wso2.com│        │  Creates & manages:                  │
+  │  /v1beta1    │        │  ├ Deployment (IS pods)              │
+  └──────────────┘        │  ├ Service                           │
+                          │  ├ ConfigMap (deployment.toml)       │
+  Status Conditions:      │  ├ Secret (keystores)                │
+  ├ ConfigReady           │  └ ServiceAccount                    │
+  ├ ServiceReady          │                                      │
+  ├ DeploymentReady       │  Validates & reports:                │
+  ├ PodsReady             │  └ Status conditions on Wso2Is CR   │
+  └ Available             └──────────────────────────────────────┘
+```
 
 ## Sample Configurations
 
