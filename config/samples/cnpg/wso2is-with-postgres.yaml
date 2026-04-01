@@ -3,7 +3,7 @@ kind: Wso2Is
 metadata:
   name: identity-server
 spec:
-  replicas: 1
+  replicas: 2
   version: "7.3.0"
   tomlConfig: |
     [server]
@@ -48,6 +48,15 @@ spec:
 
     [transport.https.properties]
     proxyPort = 443
+
+    [clustering]
+    membership_scheme = "kubernetes"
+    domain = "wso2.is.domain"
+    [clustering.properties]
+    membershipSchemeClassName = "org.wso2.carbon.membership.scheme.kubernetes.KubernetesMembershipScheme"
+    KUBERNETES_NAMESPACE = "default"
+    KUBERNETES_SERVICES = "wso2is-service"
+    KUBERNETES_MASTER_SKIP_SSL_VERIFICATION = true
   configurations:
     host: identityserver
     serviceType: ClusterIP
