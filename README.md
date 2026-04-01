@@ -38,7 +38,6 @@ kubectl apply -f artifacts/00-namespace.yaml
 kubectl apply -f artifacts/01-cluster-role.yaml
 kubectl apply -f artifacts/02-service-account.yaml
 kubectl apply -f artifacts/03-cluster-role-binding.yaml
-kubectl apply -f artifacts/04-crd-iam.wso2.com_userstores.yaml
 kubectl apply -f artifacts/05-crd-iam.wso2.com_wso2is.yaml
 kubectl apply -f artifacts/06-controller.yaml
 ```
@@ -206,34 +205,6 @@ spec:
       data: <base64-encoded-keystore-data>
 ```
 
-### Secondary User Store Provisioning
-
-The operator supports provisioning secondary user stores via the `Userstore` CRD:
-
-```yaml
-apiVersion: iam.wso2.com/v1beta1
-kind: Userstore
-metadata:
-  name: secondary-userstore
-spec:
-  typeId: <base64-encoded-type-id>
-  description: Secondary user store
-  name: wso2.com
-  properties:
-    - name: url
-      value: jdbc:mysql://mysql:3306/IS_USER_STORE
-    - name: userName
-      value: root
-    - name: password
-      value: password
-    - name: driverName
-      value: com.mysql.cj.jdbc.Driver
-auth:
-  host: identityserver
-  username: admin
-  password: admin
-```
-
 ## External Database Setup
 
 For production deployments, configure external MySQL databases. Refer to the WSO2 documentation:
@@ -267,7 +238,6 @@ cd k8s-wso2is-operator
 
 # Install CRDs
 kubectl apply -f config/crd/bases/iam.wso2.com_wso2is.yaml
-kubectl apply -f config/crd/bases/iam.wso2.com_userstores.yaml
 
 # Run the operator locally
 make run
@@ -299,4 +269,3 @@ See the [config/samples](config/samples/) directory:
 | `single_node_test_cluster.yaml` | Minimal single-replica test deployment |
 | `standard_multi_node.yaml` | Multi-replica production deployment with MySQL |
 | `standard_multi_factor.yaml` | Multi-replica with TOTP authentication enabled |
-| `userstore_config.yaml` | Secondary user store provisioning |

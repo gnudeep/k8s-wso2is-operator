@@ -18,7 +18,6 @@ kubectl apply -f artifacts/00-namespace.yaml
 kubectl apply -f artifacts/01-cluster-role.yaml
 kubectl apply -f artifacts/02-service-account.yaml
 kubectl apply -f artifacts/03-cluster-role-binding.yaml
-kubectl apply -f artifacts/04-crd-iam.wso2.com_userstores.yaml
 kubectl apply -f artifacts/05-crd-iam.wso2.com_wso2is.yaml
 kubectl apply -f artifacts/06-controller.yaml
 
@@ -370,7 +369,6 @@ kubectl delete job wso2is-pg-schema-init
 # Delete operator
 kubectl delete -f artifacts/06-controller.yaml
 kubectl delete -f artifacts/05-crd-iam.wso2.com_wso2is.yaml
-kubectl delete -f artifacts/04-crd-iam.wso2.com_userstores.yaml
 kubectl delete -f artifacts/03-cluster-role-binding.yaml
 kubectl delete -f artifacts/02-service-account.yaml
 kubectl delete -f artifacts/01-cluster-role.yaml
