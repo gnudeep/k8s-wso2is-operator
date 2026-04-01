@@ -66,51 +66,62 @@ func (r *UserstoreReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, err
 	}
 
-	GenerateUserstore(usInstance, log)
+	generateUserstore(usInstance, log)
 
 	return ctrl.Result{}, nil
 }
 
-func SpecToJson(spec wso2v1beta1.UserstoreSpec, log logr.Logger) string {
-	a, err := json.Marshal(spec)
+func specToJson(spec wso2v1beta1.UserstoreSpec, log logr.Logger) string {
+	payload := wso2v1beta1.UserstorePayload{
+		TypeId:      spec.TypeId,
+		Description: spec.Description,
+		Name:        spec.Name,
+		Properties:  spec.Properties,
+	}
+	a, err := json.Marshal(payload)
 	if err != nil {
-		log.Error(err, "Failed to get parse json")
+		log.Error(err, "Failed to parse spec to JSON")
 	}
 	return string(a)
 }
 
-//@TODO check existing user stores
-func GenerateUserstore(instance wso2v1beta1.Userstore, log logr.Logger) {
+func generateUserstore(instance wso2v1beta1.Userstore, log logr.Logger) {
 	url := "https://" + instance.Auth.Host + "/api/server/v1/userstores"
-	method := "POST"
 
-	log.Info("Reading from: " + url)
+	log.Info("Creating secondary userstore", "url", url, "name", instance.Spec.Name)
 
-	payload := strings.NewReader(SpecToJson(instance.Spec, log))
+	payload := strings.NewReader(specToJson(instance.Spec, log))
 
-	client := &http.Client{}
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: instance.Spec.InsecureSkipVerify} //@TODO Set it to HTTP transport, make skip insecure an annotation
-	req, err := http.NewRequest(method, url, payload)
+	// Create a per-request HTTP client with TLS config (avoids mutating global DefaultTransport)
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: instance.Spec.InsecureSkipVerify},
+	}
+	httpClient := &http.Client{Transport: transport}
 
+	req, err := http.NewRequest("POST", url, payload)
 	if err != nil {
-		log.Error(err, "An error has occured")
+		log.Error(err, "Failed to create HTTP request")
 		return
 	}
+
 	encodedToken := b64.StdEncoding.EncodeToString([]byte(instance.Auth.Username + ":" + instance.Auth.Password))
 	req.Header.Add("Authorization", "Basic "+encodedToken)
 	req.Header.Add("Content-Type", "application/json")
-	res, err := client.Do(req)
 
+	res, err := httpClient.Do(req)
 	if err != nil {
-		log.Error(err, "Unable to send request")
+		log.Error(err, "Unable to send request to Identity Server")
 		return
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode == 201 { //@TODO Log error based on error codes > 400
-		log.Info("UserStore has been successfully created")
-	} else {
-		log.Error(err, "Error "+strconv.Itoa(res.StatusCode)+" has occurred during UserStore creation")
+	switch {
+	case res.StatusCode == 201:
+		log.Info("Secondary userstore created successfully", "name", instance.Spec.Name)
+	case res.StatusCode == 409:
+		log.Info("Secondary userstore already exists, skipping", "name", instance.Spec.Name)
+	default:
+		log.Info("Userstore creation returned unexpected status", "name", instance.Spec.Name, "status", strconv.Itoa(res.StatusCode))
 	}
 }
 

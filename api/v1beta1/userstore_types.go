@@ -23,6 +23,15 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 // UserstoreSpec defines the desired state of Userstore
+// UserstorePayload is the JSON payload sent to the WSO2 IS userstore API
+type UserstorePayload struct {
+	TypeId      string                `json:"typeId"`
+	Description string                `json:"description"`
+	Name        string                `json:"name"`
+	Properties  []UserstoreProperties `json:"properties"`
+}
+
+// UserstoreSpec defines the desired state of Userstore
 type UserstoreSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file

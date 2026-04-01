@@ -1,22 +1,22 @@
 apiVersion: iam.wso2.com/v1beta1
 kind: Userstore
 metadata:
-  name: userstore5
+  name: corporate-userstore
 spec:
   typeId: VW5pcXVlSURKREJDVXNlclN0b3JlTWFuYWdlcg
-  description: Secondary userstore for identity server
-  name: wso2.com
+  description: Secondary JDBC userstore for corporate user directory
+  name: CORPORATE
   insecureSkipVerify: true
-  auth:
-    host: identityserver #Identity server object reference
-    username: admin
-    password: admin #Secret reference
   properties:
     - name: url
-      value: jdbc:mysql://192.168.99.1:3306/IS_USER_STORE?autoReconnect=true&amp;useSSL=false
+      value: jdbc:postgresql://corporate-db:5432/corporate_users
     - name: userName
-      value: root
+      value: dbadmin
     - name: password
-      value: '1234'
+      value: dbpassword
     - name: driverName
-      value: com.mysql.jdbc.Driver
+      value: org.postgresql.Driver
+auth:
+  host: wso2is-service.default.svc.cluster.local:9443
+  username: admin
+  password: admin
