@@ -1,0 +1,30 @@
+---
+# PostgreSQL credentials for WSO2 Identity Server
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wso2is-pg-credentials
+type: kubernetes.io/basic-auth
+stringData:
+  username: wso2carbon
+  password: wso2carbon
+---
+# CloudNativePG PostgreSQL Cluster for WSO2 Identity Server
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: wso2is-pg
+spec:
+  instances: 1
+
+  storage:
+    size: 2Gi
+
+  bootstrap:
+    initdb:
+      database: wso2_identity_db
+      owner: wso2carbon
+      secret:
+        name: wso2is-pg-credentials
+      postInitSQL:
+        - CREATE DATABASE wso2_shared_db OWNER wso2carbon;

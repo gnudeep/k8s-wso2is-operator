@@ -1,0 +1,53 @@
+apiVersion: iam.wso2.com/v1beta1
+kind: Wso2Is
+metadata:
+  name: identity-server
+spec:
+  replicas: 1
+  version: "7.3.0"
+  tomlConfig: |
+    [server]
+    hostname = "$env{HOST_NAME}"
+    node_ip = "$env{NODE_IP}"
+
+    [super_admin]
+    username = "admin"
+    password = "admin"
+    create_admin_account = true
+
+    [user_store]
+    type = "database_unique_id"
+
+    [database.identity_db]
+    type = "postgre"
+    url = "jdbc:postgresql://wso2is-pg-rw:5432/wso2_identity_db"
+    username = "wso2carbon"
+    password = "wso2carbon"
+    driver = "org.postgresql.Driver"
+    [database.identity_db.pool_options]
+    validationQuery = "SELECT 1"
+
+    [database.shared_db]
+    type = "postgre"
+    url = "jdbc:postgresql://wso2is-pg-rw:5432/wso2_shared_db"
+    username = "wso2carbon"
+    password = "wso2carbon"
+    driver = "org.postgresql.Driver"
+    [database.shared_db.pool_options]
+    validationQuery = "SELECT 1"
+
+    [keystore.primary]
+    file_name = "wso2carbon.p12"
+    password = "wso2carbon"
+    type = "PKCS12"
+
+    [truststore]
+    file_name = "client-truststore.p12"
+    password = "wso2carbon"
+    type = "PKCS12"
+
+    [transport.https.properties]
+    proxyPort = 443
+  configurations:
+    host: identityserver
+    serviceType: ClusterIP

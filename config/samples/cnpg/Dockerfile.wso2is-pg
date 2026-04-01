@@ -1,0 +1,7 @@
+FROM wso2/wso2is:7.2.0
+
+USER root
+RUN wget -q -O /home/wso2carbon/wso2is-7.2.0/repository/components/lib/postgresql-42.7.3.jar \
+    https://jdbc.postgresql.org/download/postgresql-42.7.3.jar && \
+    chown wso2carbon:wso2 /home/wso2carbon/wso2is-7.2.0/repository/components/lib/postgresql-42.7.3.jar
+USER wso2carbon

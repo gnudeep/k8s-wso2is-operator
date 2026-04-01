@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wso2is-pg-schema-init
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: schema-init
+          image: postgres:16-alpine
+          env:
+            - name: PGHOST
+              value: wso2is-pg-rw
+            - name: PGUSER
+              value: wso2carbon
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wso2is-pg-credentials
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              until pg_isready -h $PGHOST; do sleep 2; done
+              echo "Applying shared_db schema..."
+              psql -d wso2_shared_db -f /schemas/shared/shared.sql
+              echo "Applying identity_db schema..."
+              psql -d wso2_identity_db -f /schemas/identity/identity.sql
+              echo "Applying consent schema..."
+              psql -d wso2_identity_db -f /schemas/identity/consent.sql
+              echo "Schema initialization complete."
+          volumeMounts:
+            - name: shared-schema
+              mountPath: /schemas/shared
+            - name: identity-schema
+              mountPath: /schemas/identity
+      volumes:
+        - name: shared-schema
+          configMap:
+            name: wso2is-pg-schema-shared
+        - name: identity-schema
+          configMap:
+            name: wso2is-pg-schema-identity
